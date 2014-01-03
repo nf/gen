@@ -52,14 +52,16 @@ func run() error {
 
 	quit := make(chan bool)
 
+	spd := 1000 * time.Millisecond
+
 	n1 := make(chan Note)
 	g1 := generator{
-		minN: 48, maxN: 84,
-		minD:    50 * time.Millisecond,
-		maxD:    200 * time.Millisecond,
-		stepD:   50 * time.Millisecond,
+		minN: 48, maxN: 72,
+		minD:    spd,
+		maxD:    4*spd,
+		stepD:   spd/4,
 		scale:   other,
-		ringLen: 32,
+		ringLen: 16,
 	}
 	go g1.run(n1, quit)
 	go play(ls, 2, n1, quit)
@@ -67,11 +69,11 @@ func run() error {
 	n2 := make(chan Note)
 	g2 := generator{
 		minN: 36, maxN: 60,
-		minD:    200 * time.Millisecond,
-		maxD:    800 * time.Millisecond,
-		stepD:   100 * time.Millisecond,
+		minD:    4*spd,
+		maxD:    16*spd,
+		stepD:   spd,
 		scale:   other,
-		ringLen: 8,
+		ringLen: 4,
 	}
 	go g2.run(n2, quit)
 	go play(ls, 3, n2, quit)
@@ -139,7 +141,8 @@ func (g *generator) run(notes chan Note, quit chan bool) {
 	ring := make([]Note, g.ringLen)
 	for i := range ring {
 		if i%2 == 0 {
-			ring[i] = g.scale.Quantize(Note{g.minN, g.minD})
+			n := Note{int64(rand.Intn(int(g.maxN-g.minN))) + g.minN, g.minD}
+			ring[i] = g.scale.Quantize(n)
 		} else {
 			ring[i] = Note{0, g.minD}
 		}
@@ -172,15 +175,15 @@ func (g *generator) mutate(n Note) Note {
 		}
 		n = g.scale.Quantize(n)
 	}
-	//	if rand.Intn(4) == 0 {
-	//		n.d += time.Duration(rand.Intn(3)-1) * g.stepD
-	//		if n.d < g.minD {
-	//			n.d = g.minD
-	//		}
-	//		if n.d > g.maxD {
-	//			n.d = g.maxD
-	//		}
-	//	}
+	if rand.Intn(4) == 0 {
+		n.d += time.Duration(rand.Intn(3)-1) * g.stepD
+		if n.d < g.minD {
+			n.d = g.minD
+		}
+		if n.d > g.maxD {
+			n.d = g.maxD
+		}
+	}
 	return n
 }
 
