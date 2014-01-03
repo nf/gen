@@ -58,10 +58,13 @@ func run() error {
 	g1 := generator{
 		minN: 48, maxN: 72,
 		minD:    spd,
-		maxD:    4*spd,
-		stepD:   spd/4,
+		maxD:    4 * spd,
+		stepD:   spd / 8,
 		scale:   other,
 		ringLen: 16,
+		noteP:   4,
+		timeP:   2,
+		switchP: 16,
 	}
 	go g1.run(n1, quit)
 	go play(ls, 2, n1, quit)
@@ -69,11 +72,14 @@ func run() error {
 	n2 := make(chan Note)
 	g2 := generator{
 		minN: 36, maxN: 60,
-		minD:    4*spd,
-		maxD:    16*spd,
+		minD:    4 * spd,
+		maxD:    16 * spd,
 		stepD:   spd,
 		scale:   other,
 		ringLen: 4,
+		noteP:   2,
+		timeP:   2,
+		switchP: 4,
 	}
 	go g2.run(n2, quit)
 	go play(ls, 3, n2, quit)
@@ -131,10 +137,11 @@ type Note struct {
 }
 
 type generator struct {
-	minN, maxN        int64
-	minD, maxD, stepD time.Duration
-	scale             Scale
-	ringLen           int
+	minN, maxN            int64
+	minD, maxD, stepD     time.Duration
+	scale                 Scale
+	ringLen               int
+	noteP, timeP, switchP int
 }
 
 func (g *generator) run(notes chan Note, quit chan bool) {
@@ -156,10 +163,10 @@ func (g *generator) run(notes chan Note, quit chan bool) {
 }
 
 func (g *generator) mutate(n Note) Note {
-	if n.n > 0 && rand.Intn(4) == 0 {
+	if n.n > 0 && rand.Intn(g.noteP) == 0 {
 		n.n += int64(rand.Intn(13) - 6)
 	}
-	if rand.Intn(16) == 0 {
+	if rand.Intn(g.switchP) == 0 {
 		if n.n == 0 {
 			n.n = int64(rand.Intn(int(g.maxN-g.minN))) + g.minN
 		} else {
@@ -175,7 +182,7 @@ func (g *generator) mutate(n Note) Note {
 		}
 		n = g.scale.Quantize(n)
 	}
-	if rand.Intn(4) == 0 {
+	if rand.Intn(g.timeP) == 0 {
 		n.d += time.Duration(rand.Intn(3)-1) * g.stepD
 		if n.d < g.minD {
 			n.d = g.minD
