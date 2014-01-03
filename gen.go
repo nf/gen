@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/rakyll/portmidi"
@@ -47,27 +48,64 @@ func run() error {
 		return err
 	}
 	defer s.Close()
+	ls := &lockedStream{s: s}
 
 	quit := make(chan bool)
-	go func() {
-		b := make([]byte, 1)
-		os.Stdin.Read(b)
-		quit <- true
-	}()
 
-	notes := make(chan Note)
-	go gen(notes)
+	n1 := make(chan Note)
+	g1 := generator{
+		minN: 48, maxN: 84,
+		minD:    50 * time.Millisecond,
+		maxD:    200 * time.Millisecond,
+		stepD:   50 * time.Millisecond,
+		scale:   other,
+		ringLen: 32,
+	}
+	go g1.run(n1, quit)
+	go play(ls, 2, n1, quit)
 
+	n2 := make(chan Note)
+	g2 := generator{
+		minN: 36, maxN: 60,
+		minD:    200 * time.Millisecond,
+		maxD:    800 * time.Millisecond,
+		stepD:   100 * time.Millisecond,
+		scale:   other,
+		ringLen: 8,
+	}
+	go g2.run(n2, quit)
+	go play(ls, 3, n2, quit)
+
+	b := make([]byte, 1)
+	os.Stdin.Read(b)
+	close(quit)
+
+	time.Sleep(time.Second)
+	return nil
+}
+
+type lockedStream struct {
+	mu sync.Mutex
+	s  *portmidi.Stream
+}
+
+func (s *lockedStream) WriteShort(status, data1, data2 int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.s.WriteShort(status, data1, data2)
+}
+
+func play(s *lockedStream, ch int, notes chan Note, quit chan bool) {
 	for {
 		select {
 		case <-quit:
-			return nil
+			return
 		case n, ok := <-notes:
 			if !ok {
-				return nil
+				return
 			}
 			if n.n > 0 {
-				s.WriteShort(0x94, n.n, 100)
+				s.WriteShort(0x90+int64(ch), n.n, 100)
 			}
 			q := false
 			select {
@@ -76,10 +114,10 @@ func run() error {
 			case <-time.After(n.d):
 			}
 			if n.n > 0 {
-				s.WriteShort(0x84, n.n, 100)
+				s.WriteShort(0x80+int64(ch), n.n, 100)
 			}
 			if q {
-				return nil
+				return
 			}
 		}
 	}
@@ -88,6 +126,62 @@ func run() error {
 type Note struct {
 	n int64
 	d time.Duration
+}
+
+type generator struct {
+	minN, maxN        int64
+	minD, maxD, stepD time.Duration
+	scale             Scale
+	ringLen           int
+}
+
+func (g *generator) run(notes chan Note, quit chan bool) {
+	ring := make([]Note, g.ringLen)
+	for i := range ring {
+		if i%2 == 0 {
+			ring[i] = g.scale.Quantize(Note{g.minN, g.minD})
+		} else {
+			ring[i] = Note{0, g.minD}
+		}
+	}
+	for {
+		for i := range ring {
+			ring[i] = g.mutate(ring[i])
+			notes <- ring[i]
+		}
+	}
+}
+
+func (g *generator) mutate(n Note) Note {
+	if n.n > 0 && rand.Intn(4) == 0 {
+		n.n += int64(rand.Intn(13) - 6)
+	}
+	if rand.Intn(16) == 0 {
+		if n.n == 0 {
+			n.n = int64(rand.Intn(int(g.maxN-g.minN))) + g.minN
+		} else {
+			n.n = 0
+		}
+	}
+	if n.n > 0 {
+		if n.n < g.minN {
+			n.n = g.minN
+		}
+		if n.n > g.maxN {
+			n.n = g.maxN
+		}
+		n = g.scale.Quantize(n)
+	}
+	//	if rand.Intn(4) == 0 {
+	//		n.d += time.Duration(rand.Intn(3)-1) * g.stepD
+	//		if n.d < g.minD {
+	//			n.d = g.minD
+	//		}
+	//		if n.d > g.maxD {
+	//			n.d = g.maxD
+	//		}
+	//	}
+	return n
 }
 
 type Scale [12]bool
@@ -115,52 +209,8 @@ func (s Scale) Quantize(note Note) Note {
 	return note
 }
 
-func genX(notes chan Note) {
-	for {
-		notes <- Note{60, 50 * time.Millisecond}
-		notes <- Note{0, 50 * time.Millisecond}
-		notes <- Note{72, 50 * time.Millisecond}
-		notes <- Note{0, 50 * time.Millisecond}
-	}
-}
-
-func gen(notes chan Note) {
-	ring := make([]Note, 8)
-	for i := range ring {
-		ring[i] = Note{60, 50 * time.Millisecond}
-	}
-	for {
-		for i := range ring {
-			ring[i] = mutate(ring[i])
-			notes <- ring[i]
-			notes <- Note{0, 50 * time.Millisecond}
-		}
-	}
-}
-
 var (
-	cmaj = Scale{true, false, true, false, true, true, false, true, false, true, false, true}
+	cmaj  = Scale{true, false, true, false, true, true, false, true, false, true, false, true}
+	other = Scale{true, false, true, true, false, true, false, true, false, true, true, false}
+	pent  = Scale{false, true, false, true, false, false, true, false, true, false, true, false}
 )
-
-func mutate(n Note) Note {
-	if rand.Intn(4) == 0 {
-		n.n += int64(rand.Intn(13) - 6)
-		n = cmaj.Quantize(n)
-		if n.n < 36 {
-			n.n = 36
-		}
-		if n.n > 84 {
-			n.n = 84
-		}
-	}
-	if rand.Intn(4) == 0 {
-		n.d += time.Duration(rand.Intn(3)-1) * 50 * time.Millisecond
-		if n.d < 50*time.Millisecond {
-			n.d = 50 * time.Millisecond
-		}
-		if n.d > 500*time.Millisecond {
-			n.d = 500 * time.Millisecond
-		}
-	}
-	return n
-}
