@@ -60,7 +60,7 @@ func run() error {
 		minD:    spd,
 		maxD:    4 * spd,
 		stepD:   spd / 8,
-		scale:   other,
+		scale:   dorian,
 		ringLen: 16,
 		noteP:   4,
 		timeP:   2,
@@ -75,7 +75,7 @@ func run() error {
 		minD:    4 * spd,
 		maxD:    16 * spd,
 		stepD:   spd,
-		scale:   other,
+		scale:   dorian,
 		ringLen: 4,
 		noteP:   2,
 		timeP:   2,
@@ -220,7 +220,7 @@ func (s Scale) Quantize(note Note) Note {
 }
 
 var (
-	cmaj  = Scale{true, false, true, false, true, true, false, true, false, true, false, true}
-	other = Scale{true, false, true, true, false, true, false, true, false, true, true, false}
-	pent  = Scale{false, true, false, true, false, false, true, false, true, false, true, false}
+	cmaj   = Scale{true, false, true, false, true, true, false, true, false, true, false, true}
+	dorian = Scale{true, false, true, true, false, true, false, true, false, true, true, false}
+	pent   = Scale{false, true, false, true, false, false, true, false, true, false, true, false}
 )
